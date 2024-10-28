@@ -1,0 +1,5 @@
+praw
+azure-eventhub
+azure-identity
+azure-keyvault-secrets
+azure-ai-textanalytics
