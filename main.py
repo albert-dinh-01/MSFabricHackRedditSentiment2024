@@ -1,6 +1,8 @@
 import json
 
 import praw
+from azure.ai.textanalytics import TextAnalyticsClient
+from azure.core.credentials import AzureKeyCredential
 from azure.eventhub import EventData, EventHubProducerClient
 from azure.identity import DefaultAzureCredential
 from azure.keyvault.secrets import SecretClient
@@ -31,6 +33,31 @@ class RedditEventHubFetcher:
             password=self.client.get_secret("RedditPassword").value,
             user_agent="production_app_agent",
         )
+        text_analytics_endpoint = self.client.get_secret(
+            "AzureCognitiveServicesEndpoint"
+        ).value
+        self.text_analytics_key = self.client.get_secret(
+            "AzureCognitiveServicesKeyA"
+        ).value
+        self.text_analytics_client = TextAnalyticsClient(
+            text_analytics_endpoint,
+            credential=AzureKeyCredential(self.text_analytics_key),
+        )
+
+    def analyze_sentiment(self, text):
+        """Analyze sentiment of a given text using Azure Text Analytics."""
+        if not text:  # Check if text is empty
+            print("Text is empty, skipping sentiment analysis.")
+            return 0.5  # You could choose a neutral default score, like 0.5
+
+        try:
+            response = self.text_analytics_client.analyze_sentiment(documents=[text])[0]
+            sentiment_score = response.confidence_scores.positive
+            print(f"Sentiment Score: {sentiment_score}")
+            return sentiment_score
+        except Exception as e:
+            print(f"Error during sentiment analysis: {e}")
+            return 0.5  # Return a neutral sentiment score if there's an error
 
     def send_to_event_hub(self, post_data):
         """Send post data to Event Hub in JSON format."""
@@ -41,12 +68,15 @@ class RedditEventHubFetcher:
         print(f"Sent post to Event Hub: {post_data['title']}")
 
     def fetch_detailed_posts(self, subreddits, search_term, limit=10):
-        """Fetch detailed posts from Reddit and send them to Event Hub."""
+        """Fetch detailed posts from Reddit, analyze sentiment, and send them to Event Hub."""
         for subreddit_name in subreddits:
             print(f"\nSearching in subreddit: r/{subreddit_name}")
             subreddit = self.reddit.subreddit(subreddit_name)
 
             for submission in subreddit.search(search_term, limit=limit):
+                # Analyze sentiment of the post text
+                sentiment_score = self.analyze_sentiment(submission.selftext)
+
                 post_data = {
                     "title": submission.title,
                     "score": submission.score,
@@ -56,6 +86,7 @@ class RedditEventHubFetcher:
                     "author": str(submission.author),
                     "subreddit": str(submission.subreddit),
                     "subreddit_id": submission.subreddit_id,
+                    "sentiment_score": sentiment_score,
                 }
 
                 # Print post details to console
@@ -65,3 +96,8 @@ class RedditEventHubFetcher:
 
                 # Send post data to Event Hub
                 self.send_to_event_hub(post_data)
+
+
+if __name__ == "__main__":
+    fetcher = RedditEventHubFetcher()
+    fetcher.fetch_detailed_posts(subreddits=["learnpython"], search_term="Azure")

@@ -9,3 +9,4 @@ azure-identity
 azure-keyvault-secrets
 azure-ai-textanalytics
 azurefunctions-extensions-http-fastapi
+azure-ai-textanalytics

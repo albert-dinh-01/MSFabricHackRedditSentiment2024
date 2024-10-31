@@ -1,10 +1,4 @@
-import json
-
 import azure.functions as func
-import praw
-from azure.eventhub import EventData, EventHubProducerClient
-from azure.identity import DefaultAzureCredential
-from azure.keyvault.secrets import SecretClient
 
 from main import RedditEventHubFetcher
 
