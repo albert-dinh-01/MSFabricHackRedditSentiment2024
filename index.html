@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Sentiment Analysis Chart</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+  <body>
+    <h2>Sentiment Analysis for a Candidate</h2>
+    <label for="arg">Enter Candidate Name:</label>
+    <input type="text" id="arg" placeholder="e.g., Oilers" />
+    <button onclick="fetchData()">Get Sentiment Data</button>
+
+    <canvas id="sentimentChart" width="400" height="200"></canvas>
+
+    <script>
+      async function fetchData() {
+        const arg = document.getElementById("arg").value;
+        if (!arg) {
+          alert("Please enter a arg 1");
+          return;
+        }
+
+        const response = await fetch(
+          "https://<YOUR_AZURE_FUNCTION_APP_URL>/api/getSentimentData",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              arg: arg,
+              subreddits: ["politics", "worldnews"],
+            }),
+          }
+        );
+
+        const data = await response.json();
+        plotChart(data);
+      }
+
+      function plotChart(data) {
+        const ctx = document.getElementById("sentimentChart").getContext("2d");
+        const timestamps = data.map((item) => item.created_datetime);
+        const sentimentScores = data.map((item) => item.sentiment_score);
+
+        new Chart(ctx, {
+          type: "line",
+          data: {
+            labels: timestamps,
+            datasets: [
+              {
+                label: `Sentiment Score for ${data[0].arg}`,
+                data: sentimentScores,
+                borderColor: "rgba(75, 192, 192, 1)",
+                borderWidth: 1,
+              },
+            ],
+          },
+          options: {
+            scales: {
+              x: { title: { display: true, text: "Time" } },
+              y: {
+                title: { display: true, text: "Sentiment Score" },
+                min: 0,
+                max: 1,
+              },
+            },
+          },
+        });
+      }
+    </script>
+  </body>
+</html>

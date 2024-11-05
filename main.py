@@ -33,6 +33,7 @@ class RedditEventHubFetcher:
             password=self.client.get_secret("RedditPassword").value,
             user_agent="production_app_agent",
         )
+
         text_analytics_endpoint = self.client.get_secret(
             "AzureCognitiveServicesEndpoint"
         ).value
@@ -44,20 +45,71 @@ class RedditEventHubFetcher:
             credential=AzureKeyCredential(self.text_analytics_key),
         )
 
-    def analyze_sentiment(self, text):
-        """Analyze sentiment of a given text using Azure Text Analytics."""
-        if not text:  # Check if text is empty
+    def analyze_sentiment_with_chunking(self, text, chunk_size=5120):
+        """Analyze sentiment by breaking down text into chunks if needed."""
+        if not text:
             print("Text is empty, skipping sentiment analysis.")
-            return 0.5  # You could choose a neutral default score, like 0.5
+            return {
+                "overall_sentiment": "neutral",
+                "sentiment_score": 0.5,
+                "opinions": [],
+            }
 
-        try:
-            response = self.text_analytics_client.analyze_sentiment(documents=[text])[0]
-            sentiment_score = response.confidence_scores.positive
-            print(f"Sentiment Score: {sentiment_score}")
-            return sentiment_score
-        except Exception as e:
-            print(f"Error during sentiment analysis: {e}")
-            return 0.5  # Return a neutral sentiment score if there's an error
+        chunks = [text[i : i + chunk_size] for i in range(0, len(text), chunk_size)]
+        overall_sentiment_score = 0
+        opinions = []
+
+        for chunk in chunks:
+            try:
+                response = self.text_analytics_client.analyze_sentiment(
+                    documents=[chunk], show_opinion_mining=True
+                )[0]
+
+                overall_sentiment_score += response.confidence_scores.positive
+
+                for sentence in response.sentences:
+                    if sentence.mined_opinions:
+                        for mined_opinion in sentence.mined_opinions:
+                            target = mined_opinion.target
+                            assessments = [
+                                {
+                                    "text": assessment.text,
+                                    "sentiment": assessment.sentiment,
+                                }
+                                for assessment in mined_opinion.assessments
+                            ]
+                            opinions.append(
+                                {
+                                    "target": target.text,
+                                    "target_sentiment": target.sentiment,
+                                    "assessments": assessments,
+                                }
+                            )
+
+            except Exception as e:
+                print(f"Error during sentiment analysis for a chunk: {e}")
+                continue  # Skip this chunk if an error occurs
+
+        # Calculate average sentiment score
+        average_sentiment_score = overall_sentiment_score / len(chunks)
+        overall_sentiment = "positive" if average_sentiment_score > 0.5 else "negative"
+
+        return {
+            "overall_sentiment": overall_sentiment,
+            "sentiment_score": average_sentiment_score,
+            "opinions": opinions,
+        }
+
+    def fetch_comments_as_blob(self, submission):
+        """Aggregate all comments of a submission into a single text blob."""
+        all_comments_text = " ".join(
+            [
+                comment.body
+                for comment in submission.comments
+                if isinstance(comment, praw.models.Comment)
+            ]
+        )
+        return all_comments_text
 
     def send_to_event_hub(self, post_data):
         """Send post data to Event Hub in JSON format."""
@@ -67,37 +119,77 @@ class RedditEventHubFetcher:
         self.producer.send_batch(event_data_batch)
         print(f"Sent post to Event Hub: {post_data['title']}")
 
-    def fetch_detailed_posts(self, subreddits, search_term, limit=10):
-        """Fetch detailed posts from Reddit, analyze sentiment, and send them to Event Hub."""
+    def fetch_detailed_posts(self, subreddits, arg, limit=20):
+        """Fetch posts, analyze sentiment (with opinion mining), and send to Event Hub."""
         for subreddit_name in subreddits:
-            print(f"\nSearching in subreddit: r/{subreddit_name}")
+            print(f"\nSearching in subreddit: r/{subreddit_name} for term: {arg}")
             subreddit = self.reddit.subreddit(subreddit_name)
 
-            for submission in subreddit.search(search_term, limit=limit):
-                # Analyze sentiment of the post text
-                sentiment_score = self.analyze_sentiment(submission.selftext)
+            for submission in subreddit.search(
+                arg, syntax="plain", time_filter="day", limit=limit
+            ):
+                comments_text_blob = self.fetch_comments_as_blob(submission)
+                combined_text = f"{submission.selftext} {comments_text_blob}"
+
+                # Analyze sentiment with chunking
+                sentiment_result = self.analyze_sentiment_with_chunking(combined_text)
 
                 post_data = {
+                    "arg": arg,
                     "title": submission.title,
                     "score": submission.score,
                     "comments": submission.num_comments,
                     "post_id": submission.id,
-                    "text": submission.selftext,
+                    "text": combined_text,
                     "author": str(submission.author),
                     "subreddit": str(submission.subreddit),
                     "subreddit_id": submission.subreddit_id,
-                    "sentiment_score": sentiment_score,
+                    "created_utc": submission.created_utc,
+                    "overall_sentiment": sentiment_result["overall_sentiment"],
+                    "sentiment_score": sentiment_result["sentiment_score"],
+                    "opinions": sentiment_result["opinions"],
                 }
 
-                # Print post details to console
-                print("-" * 100)
-                for key, value in post_data.items():
-                    print(f"{key.capitalize()}: {value}")
+                print("--" * 20)
+                print("Overall Sentiment:", post_data["overall_sentiment"])
+                print("Sentiment Score:", post_data["sentiment_score"])
+                print("Opinions:", post_data["opinions"])
 
                 # Send post data to Event Hub
                 self.send_to_event_hub(post_data)
+                print("--" * 20)
 
 
 if __name__ == "__main__":
     fetcher = RedditEventHubFetcher()
-    fetcher.fetch_detailed_posts(subreddits=["learnpython"], search_term="Azure")
+    fetcher.fetch_detailed_posts(
+        subreddits=[
+            "gaming",
+            "games",
+            "xboxone",
+            "PS4",
+            "PlayStation",
+            "xbox",
+            "gamingnews",
+            "pcgaming",
+            "GameDeals",
+            "videogames",
+        ],
+        arg="Xbox",
+    )
+
+    fetcher.fetch_detailed_posts(
+        subreddits=[
+            "gaming",
+            "games",
+            "xboxone",
+            "PS4",
+            "PlayStation",
+            "xbox",
+            "gamingnews",
+            "pcgaming",
+            "GameDeals",
+            "videogames",
+        ],
+        arg="PlayStation",
+    )

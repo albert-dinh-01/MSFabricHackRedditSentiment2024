@@ -1,3 +1,6 @@
+import datetime
+import logging
+
 import azure.functions as func
 
 from main import RedditEventHubFetcher
@@ -5,47 +8,40 @@ from main import RedditEventHubFetcher
 app = func.FunctionApp()
 
 
-@app.function_name(name="HttpTrigger1")
-@app.route(route="req")
-def main(req: func.HttpRequest) -> func.HttpResponse:
-    # Retrieve search terms from the HTTP request
-    arg1 = req.params.get("arg1")
-    arg2 = req.params.get("arg2")
-    subreddits = req.params.get("subreddits")
+# Define a timer trigger to run every 12 hours
+@app.function_name(name="TimerTriggerFetch")
+@app.timer_trigger(schedule="0 0 */12 * * *", arg_name="mytimer")  # Runs every 12 hours
+def timer_trigger_function(mytimer: func.TimerRequest) -> None:
+    utc_timestamp = (
+        datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat()
+    )
 
-    # If parameters are not in the query, attempt to read from the request body
-    if not arg1 or not arg2 or not subreddits:
-        try:
-            req_body = req.get_json()
-        except ValueError:
-            return func.HttpResponse(
-                "Please provide 'arg1', 'arg2', and 'subreddits' in the request query or body",
-                status_code=400,
-            )
-        else:
-            arg1 = req_body.get("arg1")
-            arg2 = req_body.get("arg2")
-            subreddits = req_body.get("subreddits")
+    if mytimer.past_due:
+        logging.info("The timer is past due!")
 
-    # Validate the presence of parameters
-    if not arg1 or not arg2 or not subreddits:
-        return func.HttpResponse(
-            "Missing required parameters: 'arg1', 'arg2', and 'subreddits'",
-            status_code=400,
-        )
+    logging.info("Timer trigger function ran at %s", utc_timestamp)
 
-    # Ensure subreddits is a list (in case it comes as a comma-separated string)
-    if isinstance(subreddits, str):
-        subreddits = subreddits.split(",")
+    # Define the list of subreddits for Xbox and PlayStation
+    subreddits = [
+        "gaming",
+        "xbox",
+        "playstation",
+        "games",
+        "gamingnews",
+        "gamingcirclejerk",
+        "ps5",
+        "xboxone",
+        "gamernews",
+        "xboxseriesx",
+    ]
 
     # Initialize the RedditEventHubFetcher
     fetcher = RedditEventHubFetcher()
 
-    # Fetch posts using arg1 and arg2 as individual search terms
-    fetcher.fetch_detailed_posts(subreddits=subreddits, search_term=arg1)
-    fetcher.fetch_detailed_posts(subreddits=subreddits, search_term=arg2)
+    # Fetch posts for Xbox
+    fetcher.fetch_detailed_posts(subreddits=subreddits, arg="Xbox")
+    logging.info("Data fetching for Xbox completed.")
 
-    return func.HttpResponse(
-        f"Fetch complete for '{arg1}' and '{arg2}' in subreddits: {', '.join(subreddits)}",
-        status_code=200,
-    )
+    # Fetch posts for PlayStation
+    fetcher.fetch_detailed_posts(subreddits=subreddits, arg="PlayStation")
+    logging.info("Data fetching for PlayStation completed.")
