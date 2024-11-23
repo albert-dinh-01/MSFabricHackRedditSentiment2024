@@ -1,6 +1,6 @@
 # Inspiration
 
-The ongoing debate between Xbox and PlayStation enthusiasts is a prominent topic in the gaming community. Understanding the sentiment trends surrounding these two consoles can provide valuable insights for gamers, developers, and marketers. More info on the project: [Devpost](https://devpost.com/software/twitter-sentiment-analysis-sc4w1x) and the [demo](https://youtu.be/uzoU234xk8A?si=ggFqIEqh1PnP2NL3).
+The ongoing debate between Xbox and PlayStation enthusiasts is a prominent topic in the gaming community. Understanding the sentiment trends surrounding these two consoles can provide valuable insights for gamers, developers, and marketers. More info on the project can be found on: [Devpost](https://devpost.com/software/twitter-sentiment-analysis-sc4w1x) and its [demo here](https://youtu.be/uzoU234xk8A?si=ggFqIEqh1PnP2NL3).
 
 ## What It Does
 
